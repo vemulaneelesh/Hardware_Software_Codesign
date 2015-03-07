@@ -1,0 +1,227 @@
+// ins_idle         0
+// ins_sendsample   1
+// ins_phase0       2
+// ins_phase1       3
+// ins_phase2       4
+// ins_phase3       5
+
+//dp sincx_ins(in  Xin,  Yin  : tc(32);
+//            out Xout,  Yout : ns(32)
+// {   //Modify this interface. You also need to implement synchronisation signals
+
+
+
+dp sincx_ins(in dataa,datab : ns(32);
+          out result : tc(32);
+         in start,clk_en : ns(1);
+         out done : ns(1))
+
+{
+  reg Startinternal,Clking,Don : ns(1);
+  reg full0,full1,full2,full3 : tc(32);
+  reg tap0,tap1,tap2,tap3: tc(32);
+  reg op_phase0,op_phase1,op_phase2,op_phase3 : tc(32);
+
+  lookup c0 : tc(32) = {    0,  -2108, -3477, -2951};
+  lookup c1 : tc(32) = {    0,   4916, 10430, 14750};
+  lookup c2 : tc(32) = {16284,  14750, 10430,  4916};
+  lookup c3 : tc(32) = {    0,  -2951, -3477, -2108};
+
+
+  reg Yinp    : tc(32);
+  reg Xinp    : tc(32);
+  reg datap   : tc(32);
+
+  always {
+   
+   done = Don;
+   Startinternal = start;
+   Clking = clk_en;
+   
+   Xinp=dataa;
+   Yinp=datab;
+   
+   result = (dataa==2) ? op_phase0 : ( (dataa==3) ? op_phase1 : (dataa==4)? op_phase2: (dataa==5)? op_phase3 :0 );
+   op_phase0=full0>>14; 
+   op_phase1=full1>>14; 
+   op_phase2=full2>>14; 
+   op_phase3=full3>>14; 
+//   $display("dataa ", dataa , " ", datab ," ", start, " ", clk_en, " ",done);
+//   $display($dec, $cycle, "  ", "Result ",result);
+//   $display($dec, "inside result ","op0 ",op_phase0," ","op1 ", op_phase1, " ","op2 ", op_phase2, " ","op3 ", op_phase3);
+  }
+
+ sfg sample 
+ {
+      datap = Startinternal ? Clking ? Yinp : 0 : 0 ;
+      Don=0;
+//    $display("Inside sample ", datap ," ",Yinp);
+ }
+ 
+ sfg shift
+ {
+   tap0=datap;
+   tap1=tap0;
+   tap2=tap1;
+   tap3=tap2;
+   //$display("Inside shift ", datap, " ", tap0, " ", tap1, " ", tap2, " ", tap3);
+   Don=0;
+ }
+
+ sfg compute 
+ {
+   full0=tap0*c3(0) + tap1*c2(0) + tap2*c1(0) + tap3*c0(0);
+   full1=tap0*c3(1) + tap1*c2(1) + tap2*c1(1) + tap3*c0(1);
+   full2=tap0*c3(2) + tap1*c2(2) + tap2*c1(2) + tap3*c0(2);
+   full3=tap0*c3(3) + tap1*c2(3) + tap2*c1(3) + tap3*c0(3);
+//   $display($dec, $cycle, " full0= ", full0, " ", full1, " ", full2, " ", full3);
+   Don = 1;
+ }
+
+}
+
+fsm ctl_sincx_ins(sincx_ins){
+initial s0;
+state s1,s2;
+  @s0 if ((Startinternal&Clking)==1 ) then (sample) -> s1;
+      else (sample) -> s0;
+  @s1 (shift) -> s2;
+  @s2 (compute) -> s0;
+}
+
+dp sincx_ins_tb(out  dataa, datab  : ns(32);
+             in result        : tc(32);
+             out  start, clk_en : ns(1);
+             in done          : ns(1)) {
+  
+reg DA,DB,result0,result1,result2,result3 : tc(32);
+sig output1_sig,output2_sig,output3_sig,output4_sig : tc(32);
+reg st, clk, don : ns (1);
+sig DB_P:tc(32);
+reg counter : tc(32);
+
+
+
+always
+{ 
+	start = st ; 
+	clk_en = clk; 
+	don = done; 
+	dataa = DA; 
+	datab= DB; 
+	DB_P= DB;
+	output1_sig = result0;
+	output2_sig = result1;
+	output3_sig = result2;
+	output4_sig = result3;
+
+}
+
+sfg SAMPLE
+{
+	st=1;clk =1;  
+	DB = (counter%127) * (counter & 1 ? -1 : 1);
+	counter=counter+1;
+	$display($dec, "DB ",DB," ", result);
+
+}
+
+sfg SHIFT 
+{ 
+
+	st=0;
+	DA = 2; 
+        $display($dec, "result0 ",result,done); 
+}
+
+sfg IDLE
+{
+	st=0;
+}
+
+sfg getoutput1
+{ 
+	st=0;
+	DA = 3;
+	result0 =result; 
+ 	$display($dec, "result1 ",result,done); 
+}
+
+
+
+sfg getoutput2
+{ 
+	st=0;
+	DA = 4;
+	result1 =result; 
+ 	$display($dec, "result1 ",result,done); 
+}
+
+
+sfg getoutput3
+{ 
+	st=0;
+	DA = 5;
+	result2 =result; 
+ 	$display($dec, "result1 ",result,done); 
+}
+
+
+sfg getoutput4
+{ 
+	st=0;
+	result3 =result; 
+ 	$display($dec, "result1 ",result,done); 
+}
+
+sfg Display
+{
+	 st=0;
+	 $display ($dec,"Ref HW   ",DB_P,"  |","  ",output1_sig,"  ",output2_sig,"  ",output3_sig,"  ",output4_sig);
+}
+
+sfg END 
+{
+	$finish ;
+
+} 
+
+} 
+
+fsm ctl_sincx_ins_tb(sincx_ins_tb) {
+
+initial s0;
+state s1,s2,s3,s4,s5,s6,s7;
+@s0 if (counter > 199) then (END) -> s7;
+else   (SAMPLE) -> s1; 
+
+@s1 (SHIFT) -> s2;
+//else (IDLE) -> s1;
+
+@s2 if (done == 1) then (IDLE) -> s7;
+else (SHIFT) -> s2;    
+
+@s7 (getoutput1) -> s3;
+@s3 (getoutput2) -> s4;
+@s4 (getoutput3) -> s5;
+@s5 (getoutput4) -> s6;
+
+@s6 (Display) -> s0;
+
+}
+
+
+
+dp top {
+  sig dataa, datab: tc(32);
+  sig result      : ns(32);
+  sig start, clk  : ns(1);
+  sig done        : ns(1);
+  
+  use sincx_ins(dataa, datab, result, start,clk,done);
+  use sincx_ins_tb(dataa, datab, result, start, clk, done);
+}
+
+system S {
+  top;
+}
